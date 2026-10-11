@@ -35,10 +35,10 @@ final class NewsCardCell: UICollectionViewCell {
         imageView.image = nil
     }
 
-    func configure(with item: NewsItem, imagePixelSize: CGFloat, imageLoader: ImageLoader) {
+    func configure(with item: NewsItem, imageLoader: ImageLoader) {
         titleLabel.text = item.title
         accessibilityLabel = item.title
-        imageView.setImage(item.imageURL, maxPixelSize: imagePixelSize, loader: imageLoader)
+        imageView.setImage(item.imageURL, loader: imageLoader)
     }
 
     func setReservesTitleSpace(_ reserves: Bool) {

@@ -2,10 +2,17 @@ import UIKit
 
 final class RemoteImageView: UIImageView {
 
+    private struct Request {
+        let url: URL
+        let loader: ImageLoader
+        var pixelSize: CGFloat = 0
+    }
+
+    private static let resizeTolerance: CGFloat = 1
+
     private let placeholderView = UIImageView(image: UIImage(systemName: "photo"))
     private var loadTask: Task<Void, Never>?
-    private var representedURL: URL?
-    private var pendingLoad: (url: URL, loader: ImageLoader)?
+    private var request: Request?
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -25,29 +32,15 @@ final class RemoteImageView: UIImageView {
 
     override func layoutSubviews() {
         super.layoutSubviews()
-        startPendingLoadIfSized()
+        loadIfNeeded()
     }
 
     func setImage(_ url: URL?, loader: ImageLoader) {
-        guard let url, bounds.width == 0 else {
-            pendingLoad = nil
-            setImage(url, maxPixelSize: boundsPixelSize, loader: loader)
+        guard url == nil || url != request?.url else {
             return
         }
 
         cancel()
-        image = nil
-        showPlaceholder(false)
-        pendingLoad = (url, loader)
-    }
-
-    func setImage(_ url: URL?, maxPixelSize: CGFloat, loader: ImageLoader) {
-        guard !isAlreadyShowing(url) else {
-            return
-        }
-
-        cancel()
-        representedURL = url
         image = nil
 
         guard let url else {
@@ -56,19 +49,14 @@ final class RemoteImageView: UIImageView {
         }
 
         showPlaceholder(false)
-
-        if let cached = loader.cachedImage(for: url, maxPixelSize: maxPixelSize) {
-            image = cached
-        } else {
-            startLoading(url, maxPixelSize: maxPixelSize, loader: loader)
-        }
+        request = Request(url: url, loader: loader)
+        loadIfNeeded()
     }
 
     func cancel() {
         loadTask?.cancel()
         loadTask = nil
-        representedURL = nil
-        pendingLoad = nil
+        request = nil
     }
 
     // MARK: - Private
@@ -78,28 +66,34 @@ final class RemoteImageView: UIImageView {
         return max(bounds.width, bounds.height) * scale
     }
 
-    private func startPendingLoadIfSized() {
-        guard let pendingLoad, bounds.width > 0 else {
+    private func loadIfNeeded() {
+        guard let request, bounds.width > 0 else {
             return
         }
 
-        self.pendingLoad = nil
-        setImage(pendingLoad.url, maxPixelSize: boundsPixelSize, loader: pendingLoad.loader)
-    }
+        let pixelSize = boundsPixelSize
 
-    private func isAlreadyShowing(_ url: URL?) -> Bool {
-        guard let url, url == representedURL else {
-            return false
+        guard pixelSize > request.pixelSize + Self.resizeTolerance else {
+            return
         }
 
-        return image != nil || loadTask != nil
+        self.request?.pixelSize = pixelSize
+
+        if let cached = request.loader.cachedImage(for: request.url, maxPixelSize: pixelSize) {
+            loadTask?.cancel()
+            loadTask = nil
+            image = cached
+        } else {
+            startLoading(request.url, maxPixelSize: pixelSize, loader: request.loader)
+        }
     }
 
     private func startLoading(_ url: URL, maxPixelSize: CGFloat, loader: ImageLoader) {
+        loadTask?.cancel()
         loadTask = Task { [weak self] in
             let loaded = try? await loader.image(for: url, maxPixelSize: maxPixelSize)
 
-            guard let self, !Task.isCancelled, self.representedURL == url else {
+            guard let self, !Task.isCancelled, self.request?.url == url else {
                 return
             }
 
@@ -112,7 +106,7 @@ final class RemoteImageView: UIImageView {
 
         if let loaded {
             reveal(loaded)
-        } else {
+        } else if image == nil {
             showPlaceholder(true)
         }
     }

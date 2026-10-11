@@ -10,6 +10,7 @@ final class NewsFeedViewController: UIViewController {
     private var cancellables = Set<AnyCancellable>()
     private var currentState = NewsFeedViewModel.State()
     private var lastColumnCount = 0
+    private var isReconfigureScheduled = false
 
     private lazy var collectionView = UICollectionView(
         frame: .zero,
@@ -50,7 +51,7 @@ final class NewsFeedViewController: UIViewController {
 
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
-        reconfigureCardsIfColumnCountChanged()
+        updateColumnCountIfNeeded()
     }
 
     override func updateContentUnavailableConfiguration(using state: UIContentUnavailableConfigurationState) {
@@ -151,7 +152,7 @@ final class NewsFeedViewController: UIViewController {
         ToastView.show(message, in: view)
     }
 
-    private func reconfigureCardsIfColumnCountChanged() {
+    private func updateColumnCountIfNeeded() {
         let columns = NewsFeedLayout.columnCount(forContentWidth: collectionView.bounds.width)
 
         guard columns != lastColumnCount else {
@@ -165,7 +166,20 @@ final class NewsFeedViewController: UIViewController {
             return
         }
 
-        reconfigureArticles()
+        scheduleArticlesReconfigure()
+    }
+
+    private func scheduleArticlesReconfigure() {
+        guard !isReconfigureScheduled else {
+            return
+        }
+
+        isReconfigureScheduled = true
+
+        Task { [weak self] in
+            self?.isReconfigureScheduled = false
+            self?.reconfigureArticles()
+        }
     }
 
     private func reconfigureArticles() {
@@ -218,7 +232,7 @@ final class NewsFeedViewController: UIViewController {
                 return
             }
 
-            cell.configure(with: item, imagePixelSize: self.cardImagePixelSize, imageLoader: self.imageLoader)
+            cell.configure(with: item, imageLoader: self.imageLoader)
             cell.setReservesTitleSpace(self.isMultiColumn)
         }
     }
